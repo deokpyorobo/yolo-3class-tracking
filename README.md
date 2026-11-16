@@ -219,6 +219,11 @@ python scripts/train.py --device 0 --v1     # 1차(기본) 설정 재현
 # 3) 5초 감지·추적 영상
 python scripts/track.py --source input/source_clip_3s-8s.mp4 --start 0 --duration 5 --conf 0.45
 
+# 3-1) 웹캠 실시간 추적 (화면에 FPS 표시, q / ESC 로 종료, results/live/ 에 녹화)
+python scripts/track.py --source 0
+#      Jetson CSI 카메라 + TensorRT, 모니터 없이 30초 녹화
+python scripts/track.py --source csi --weights models/best.engine --device 0 --no-show --duration 30
+
 # 4) NPU 로 추적 (Intel Core Ultra)
 yolo export model=models/best.pt format=openvino
 python scripts/track.py --source input/source_clip_3s-8s.mp4 --duration 5 --conf 0.45 \

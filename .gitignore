@@ -9,3 +9,5 @@ colab/*.zip
 yolo_train_results*.zip
 # 원본 전체 영상(13MB)은 올리지 않고 사용한 5초 구간만 올림
 input/*.webm
+# 웹캠 실시간 녹화 (개인 영상이 실수로 올라가지 않도록)
+results/live/
