@@ -1,0 +1,30 @@
+{
+  "v1": {
+    "epochs_run": 16,
+    "train_time_s": 136.8,
+    "best_epoch": 1,
+    "precision": 0.5987,
+    "recall": 0.5342,
+    "mAP50": 0.5475,
+    "mAP50-95": 0.3839,
+    "per_class_mAP50": {
+      "cup": 0.5653,
+      "bottle": 0.3908,
+      "laptop": 0.6864
+    }
+  },
+  "v2": {
+    "epochs_run": 75,
+    "train_time_s": 580.0,
+    "best_epoch": 45,
+    "precision": 0.7339,
+    "recall": 0.6285,
+    "mAP50": 0.6915,
+    "mAP50-95": 0.5129,
+    "per_class_mAP50": {
+      "cup": 0.6807,
+      "bottle": 0.581,
+      "laptop": 0.8129
+    }
+  }
+}

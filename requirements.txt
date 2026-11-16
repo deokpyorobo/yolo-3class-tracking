@@ -1,0 +1,4 @@
+ultralytics>=8.4
+lap
+openvino>=2026.0   # NPU / Intel GPU 추론 (선택)
+pandas             # 보고서 그래프 (scripts/make_report_figures.py)

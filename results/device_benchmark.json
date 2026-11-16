@@ -1,0 +1,25 @@
+{
+  "frames": 145,
+  "imgsz": 640,
+  "torch_threads": 2,
+  "cpu_pytorch": {
+    "ms_per_frame": 27.8,
+    "fps": 35.9,
+    "detections": 394
+  },
+  "openvino_cpu": {
+    "ms_per_frame": 30.6,
+    "fps": 32.7,
+    "detections": 415
+  },
+  "openvino_gpu": {
+    "ms_per_frame": 5.5,
+    "fps": 182.9,
+    "detections": 414
+  },
+  "openvino_npu": {
+    "ms_per_frame": 8.3,
+    "fps": 119.9,
+    "detections": 415
+  }
+}

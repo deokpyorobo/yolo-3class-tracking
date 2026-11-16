@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+datasets/
+runs/
+*.log
+yolov8n.pt
+yolo11n.pt
+colab/*.zip
+yolo_train_results*.zip
+# 원본 전체 영상(13MB)은 올리지 않고 사용한 5초 구간만 올림
+input/*.webm
