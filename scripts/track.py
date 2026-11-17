@@ -37,6 +37,15 @@ ROOT = Path(__file__).resolve().parents[1]
 COLORS = {0: (214, 120, 42), 1: (122, 175, 27), 2: (52, 104, 235)}
 MAX_TRAIL = 2000  # 실시간 모드에서 ID 당 저장할 최대 궤적 점 수 (메모리 제한)
 MAX_GIF = 150  # GIF 최대 프레임 수 (실시간 모드에서 앞부분만 저장)
+WARMUP = 10  # 실시간 녹화 fps 측정에서 제외할 앞 프레임 수 (모델 로딩·워밍업)
+
+
+def measured_fps(stamps, cap_fps):
+    """워밍업 이후 프레임 간격으로 실제 처리 fps 를 잰다. 프레임이 부족하면 가능한 구간으로 추정."""
+    s = stamps[WARMUP:] if len(stamps) > WARMUP + 2 else stamps[len(stamps) // 2:]
+    if len(s) < 2 or s[-1] <= s[0]:
+        return float(cap_fps)
+    return max(0.5, min(float(cap_fps), (len(s) - 1) / (s[-1] - s[0])))
 
 
 def csi_pipeline(w, h, fps, sensor_id=0, flip=0):
@@ -164,6 +173,8 @@ def main():
     gif_frames = []
     writer = None
     pending = []  # 실시간 모드: 녹화 fps 를 재기 위해 앞 프레임을 잠시 보관
+    stamps = []  # pending 프레임들의 처리 완료 시각
+    rec_fps = src_fps
     fps_ema = None
     window = "YOLO tracking (q / ESC to quit)"
 
@@ -220,14 +231,17 @@ def main():
             cv2.rectangle(vis, (0, 0), (W, 34), (0, 0, 0), -1)
             cv2.putText(vis, head, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
-            # 녹화: 파일은 원본 fps, 실시간은 처음 30프레임의 실제 처리 속도로 fps 를 정함
+            # 녹화: 파일은 원본 fps, 실시간은 실제 처리 속도로 fps 를 정함.
+            # 처음 몇 프레임은 모델 로딩·TensorRT/CUDA 워밍업으로 수 초~수십 초 걸리므로
+            # WARMUP 프레임 이후 구간의 간격으로 fps 를 잰다 (안 그러면 영상이 몇 배 느리게 재생됨)
             if writer is None:
                 if not live:
                     writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), src_fps, (W, H))
                 else:
                     pending.append(vis)
-                    if len(pending) >= 30:
-                        rec_fps = max(1.0, min(src_fps, len(pending) / (time.perf_counter() - t0)))
+                    stamps.append(time.perf_counter())
+                    if len(pending) >= WARMUP + 30:
+                        rec_fps = measured_fps(stamps, src_fps)
                         writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), rec_fps, (W, H))
                         for p in pending:
                             writer.write(p)
@@ -252,8 +266,8 @@ def main():
     finally:
         cap.release()
         csv_fp.close()
-        if writer is None and pending:  # 30프레임 전에 끝난 실시간 녹화
-            rec_fps = max(1.0, min(src_fps, len(pending) / max(time.perf_counter() - t0, 1e-3)))
+        if writer is None and pending:  # fps 를 재기 전에 끝난 짧은 실시간 녹화
+            rec_fps = measured_fps(stamps, src_fps)
             writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), rec_fps,
                                      (pending[0].shape[1], pending[0].shape[0]))
             for p in pending:
@@ -284,7 +298,7 @@ def main():
 
     if gif_frames:
         gif_frames[0].save(out.with_suffix(".gif"), save_all=True, append_images=gif_frames[1:],
-                           duration=int(3000 / src_fps), loop=0)
+                           duration=int(3000 / (rec_fps if live else src_fps)), loop=0)
     summary = {names[k]: sum(c == k for c in id_cls.values()) for k in sorted(names)}
     print(f"저장: {out} ({f} frames, {elapsed:.1f}s, 평균 {f / elapsed:.1f} FPS, {len(trails)} tracks) "
           f"부류별 ID 수: {summary}")
