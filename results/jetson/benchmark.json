@@ -1,0 +1,18 @@
+{
+  "device": "Jetson Nano 4GB (MAXN + jetson_clocks)",
+  "frames": 146,
+  "pytorch_cuda": {
+    "ms_per_frame": 151.2,
+    "fps": 6.6,
+    "preprocess_ms": 12.0,
+    "inference_ms": 130.5,
+    "postprocess_ms": 7.8
+  },
+  "tensorrt_fp16": {
+    "ms_per_frame": 109.9,
+    "fps": 9.1,
+    "preprocess_ms": 13.8,
+    "inference_ms": 87.2,
+    "postprocess_ms": 7.9
+  }
+}

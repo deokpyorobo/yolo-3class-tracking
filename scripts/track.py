@@ -46,6 +46,42 @@ def csi_pipeline(w, h, fps, sensor_id=0, flip=0):
             f"format=BGRx ! videoconvert ! video/x-raw, format=BGR ! appsink drop=1 max-buffers=1")
 
 
+class GstPipeCapture:
+    """OpenCV 가 GStreamer 없이 빌드된 경우(pip opencv) gst-launch-1.0 의 출력을 직접 읽는 CSI 카메라 입력.
+    cv2.VideoCapture 와 같은 read() / isOpened() / get() / set() / release() 를 제공한다."""
+
+    def __init__(self, pipeline, w, h, fps):
+        import shlex
+        import subprocess
+
+        self.w, self.h, self.fps = w, h, fps
+        self.size = w * h * 3
+        cmd = ["gst-launch-1.0", "-q"] + shlex.split(pipeline.replace("appsink drop=1 max-buffers=1",
+                                                                      "fdsink fd=1 sync=false"))
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=self.size)
+
+    def isOpened(self):
+        return self.proc.poll() is None
+
+    def read(self):
+        buf = self.proc.stdout.read(self.size)
+        if len(buf) < self.size:
+            return False, None
+        return True, np.frombuffer(buf, np.uint8).reshape(self.h, self.w, 3).copy()
+
+    def get(self, prop):
+        return {cv2.CAP_PROP_FPS: self.fps, cv2.CAP_PROP_FRAME_WIDTH: self.w,
+                cv2.CAP_PROP_FRAME_HEIGHT: self.h}.get(prop, 0)
+
+    def set(self, *_):
+        return False
+
+    def release(self):
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            self.proc.wait(timeout=5)
+
+
 def open_source(args):
     """(VideoCapture, is_camera) 반환. 숫자 → USB 웹캠, 'csi' → Jetson CSI, rtsp/http → 스트림."""
     src = args.source
@@ -60,7 +96,12 @@ def open_source(args):
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # 오래된 프레임이 쌓여 지연되는 것 방지
         return cap, True
     if src.lower() == "csi":
-        return cv2.VideoCapture(csi_pipeline(args.cam_width, args.cam_height, 30), cv2.CAP_GSTREAMER), True
+        pipe = csi_pipeline(args.cam_width, args.cam_height, 30)
+        import re
+
+        if re.search(r"GStreamer:\s*YES", cv2.getBuildInformation()):
+            return cv2.VideoCapture(pipe, cv2.CAP_GSTREAMER), True
+        return GstPipeCapture(pipe, args.cam_width, args.cam_height, 30), True  # pip opencv 등 GStreamer 미지원
     if src.lower().startswith(("rtsp://", "http://", "https://")):
         return cv2.VideoCapture(src), True
     return cv2.VideoCapture(src), False
@@ -81,8 +122,10 @@ def main():
     ap.add_argument("--device", default=None,
                     help="cpu, 0(CUDA/Jetson) 또는 OpenVINO 모델일 때 npu / intel:gpu")
     ap.add_argument("--live", action="store_true", help="동영상 파일도 실시간 모드로 처리 (화면 표시, 벽시계 기준)")
-    ap.add_argument("--show", action=argparse.BooleanOptionalAction, default=None,
-                    help="화면 표시 여부 (기본: 실시간 모드에서만 표시). --no-show 로 끔")
+    # (Python 3.8 호환: BooleanOptionalAction 대신 --show / --no-show 를 직접 정의)
+    ap.add_argument("--show", dest="show", action="store_true", default=None,
+                    help="화면 표시 (기본: 실시간 모드에서만 표시)")
+    ap.add_argument("--no-show", dest="show", action="store_false", help="화면 표시 끔 (모니터 없을 때)")
     ap.add_argument("--cam-width", type=int, default=1280)
     ap.add_argument("--cam-height", type=int, default=720)
     ap.add_argument("--out", default=None, help="결과 영상 경로 (기본: results/tracking_result.mp4, "

@@ -26,6 +26,7 @@
 | `results/trajectories.csv` · `.png` | 객체 ID 별 중심점 궤적 (프레임마다 좌표 저장) |
 | `results/npu/` | 같은 영상을 NPU 로 추론·추적한 결과 |
 | `results/device_benchmark.json` | CPU / GPU / NPU 추론 속도 비교 |
+| `results/jetson/` | Jetson Nano TensorRT 추적 결과와 속도 측정 (`benchmark.json`) |
 | `results/training/` | 학습 곡선, confusion matrix, PR 곡선, 실험별 지표 |
 | `scripts/prepare_dataset.py` | 데이터 수집 + YOLO 형식 변환 |
 | `scripts/train.py` | 로컬 학습 스크립트 |
@@ -162,7 +163,9 @@ warmup_epochs=3, warmup_bias_lr=0.1
 사진만 골랐기 때문에 작은 객체에 약한 것으로 보입니다. 카메라가 움직이는 영상이라 궤적에는
 물체의 움직임과 카메라 이동이 함께 반영됩니다.
 
-## 6. NPU 추론 (Galaxy Book5 Pro)
+## 6. 엣지 장치 추론: 노트북 NPU · Jetson Nano
+
+### 6-1. 노트북 NPU (Galaxy Book5 Pro)
 
 학습된 모델을 OpenVINO 형식으로 바꿔(`yolo export format=openvino`) 노트북의 CPU, 내장 GPU,
 NPU 에서 같은 5초 영상(145프레임)을 추론하고 속도를 비교했습니다
@@ -180,6 +183,38 @@ NPU 에서 같은 5초 영상(145프레임)을 추론하고 속도를 비교했�
   (ID 수 cup 1 / bottle 2 / laptop 6 으로 CPU 결과와 거의 같음)
 - OpenVINO 모델은 640×640 고정 크기로 변환해, 세로 영상을 직사각형(384×640)으로 넣는 PyTorch 와
   입력 크기가 달라 감지 수가 조금 다릅니다 (145프레임 기준 394개 vs 415개).
+
+### 6-2. NVIDIA Jetson Nano (4GB)
+
+같은 모델을 Jetson Nano(JetPack 4.6, CUDA 10.2, TensorRT 8.0, Python 3.8)로 옮겨
+기기에서 직접 TensorRT FP16 엔진으로 변환하고(`yolo export format=engine half=True`, 약 7.5분),
+같은 5초 영상으로 속도를 측정했습니다. 측정 때는 MAXN 모드에 `jetson_clocks` 로 클럭을 최대로 고정했습니다.
+
+| Jetson Nano | 전처리 | 추론 | 후처리 | 프레임당 | FPS |
+|---|---|---|---|---|---|
+| PyTorch (CUDA) | 12.0 ms | 130.5 ms | 7.8 ms | 151 ms | 6.6 |
+| **TensorRT FP16** | 13.8 ms | **87.2 ms** | 7.9 ms | **110 ms** | **9.1** |
+
+- TensorRT 로 바꾸니 추론이 **약 1.5배** 빨라졌습니다.
+- 추적까지 포함한 전체 처리(박스·궤적 그리기, 608×1080 영상 녹화, GIF 저장)는 **3.4 FPS** 였습니다.
+  Nano 의 CPU 가 약해서 추론보다 그리기·녹화에 시간이 더 걸립니다.
+- 결과 영상: [results/jetson/tracking_result_jetson_trt.mp4](results/jetson/tracking_result_jetson_trt.mp4)
+  (ID 수 cup 1 / bottle 2 / laptop 6 으로 노트북 결과와 거의 같음)
+- 클럭을 고정하지 않으면 GPU 가 76.8MHz(최대 921.6MHz)에 머물러 TensorRT 도 7.0 FPS 에 그쳤습니다.
+  짧은 작업이 반복되면 GPU 클럭이 자동으로 충분히 올라가지 않기 때문입니다.
+- Jetson 에 연결된 USB 웹캠(Logitech C170, 640×480)과 CSI 카메라(IMX219, 1280×720)에서도
+  [scripts/track.py](scripts/track.py) 로 실시간 추적이 가능합니다 (`--source 1` / `--source csi`).
+  Jetson 의 OpenCV 는 GStreamer 를 지원하지 않아, CSI 카메라는 `gst-launch-1.0` 의 출력을 직접 읽도록 했습니다.
+
+장치별 비교 (같은 5초 영상, 전처리 + 추론 + 후처리, 추적·그리기 제외):
+
+| 장치 | FPS (YOLOv8n, 640) |
+|---|---|
+| 노트북 Intel Arc 140V GPU (OpenVINO) | 183 |
+| 노트북 NPU (OpenVINO) | 120 |
+| 노트북 CPU (PyTorch, 2스레드) | 36 |
+| Jetson Nano TensorRT FP16 | 9.1 |
+| Jetson Nano PyTorch | 6.6 |
 
 ## 7. 과제 과정에서 경험한 내용
 
@@ -221,8 +256,11 @@ python scripts/track.py --source input/source_clip_3s-8s.mp4 --start 0 --duratio
 
 # 3-1) 웹캠 실시간 추적 (화면에 FPS 표시, q / ESC 로 종료, results/live/ 에 녹화)
 python scripts/track.py --source 0
-#      Jetson CSI 카메라 + TensorRT, 모니터 없이 30초 녹화
-python scripts/track.py --source csi --weights models/best.engine --device 0 --no-show --duration 30
+#      Jetson Nano: 기기에서 TensorRT 엔진을 만든 뒤 (약 7.5분) USB 웹캠 / CSI 카메라로 실시간 추적
+yolo export model=models/best.pt format=engine half=True device=0
+sudo jetson_clocks                     # 클럭 최대 고정 (재부팅하면 원래대로)
+python3 scripts/track.py --source 1 --weights models/best.engine --device 0
+python3 scripts/track.py --source csi --weights models/best.engine --device 0 --no-show --duration 30
 
 # 4) NPU 로 추적 (Intel Core Ultra)
 yolo export model=models/best.pt format=openvino
