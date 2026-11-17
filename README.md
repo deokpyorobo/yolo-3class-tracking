@@ -26,7 +26,7 @@
 | `results/trajectories.csv` · `.png` | 객체 ID 별 중심점 궤적 (프레임마다 좌표 저장) |
 | `results/npu/` | 같은 영상을 NPU 로 추론·추적한 결과 |
 | `results/device_benchmark.json` | CPU / GPU / NPU 추론 속도 비교 |
-| `results/jetson/` | Jetson Nano TensorRT 추적 결과와 속도 측정 (`benchmark.json`) |
+| `results/jetson/` | Jetson Nano TensorRT 추적 결과, 속도 측정(`benchmark.json`), 웹캠 실시간 추적 영상 |
 | `results/training/` | 학습 곡선, confusion matrix, PR 곡선, 실험별 지표 |
 | `scripts/prepare_dataset.py` | 데이터 수집 + YOLO 형식 변환 |
 | `scripts/train.py` | 로컬 학습 스크립트 |
@@ -215,6 +215,27 @@ NPU 에서 같은 5초 영상(145프레임)을 추론하고 속도를 비교했�
 | 노트북 CPU (PyTorch, 2스레드) | 36 |
 | Jetson Nano TensorRT FP16 | 9.1 |
 | Jetson Nano PyTorch | 6.6 |
+
+### 6-3. Jetson Nano 웹캠 실시간 추적
+
+Jetson Nano 에 연결한 USB 웹캠(Logitech C170, 640×480)으로 실시간 감지·추적을 하면서 녹화했습니다.
+TensorRT FP16 엔진을 썼고, 화면에 감지 박스·궤적·부류별 ID 수·FPS 를 표시합니다.
+
+```bash
+python3 scripts/track.py --source 1 --weights models/best.engine --device 0
+```
+
+![Jetson 웹캠 실시간 추적](results/jetson/live_webcam_3s-40s.gif)
+
+결과 영상: [results/jetson/live_webcam_3s-40s.mp4](results/jetson/live_webcam_3s-40s.mp4)
+(전체 녹화 중 3~40초 구간, 37초, 640×480)
+
+- 처리 속도는 **약 6.4 FPS** 였습니다 (화면 표시 기준 5.8~8.2 FPS).
+  640×480 입력이라 608×1080 영상 파일(3.4 FPS)보다 빠릅니다.
+- 이 구간에서 추적된 ID (5프레임 이상): **cup 2, bottle 1, laptop 1**
+- 손에 든 분홍색 물병과 노트북은 안정적으로 감지·추적했지만, **투명한 유리컵은 잘 잡지 못했습니다.**
+  COCO 학습 데이터의 컵은 대부분 불투명한 머그·종이컵이라 투명한 컵의 예시가 적기 때문으로 보입니다.
+- 처음 실행할 때 TensorRT 엔진 로딩·워밍업에 약 29초가 걸려, 녹화 앞부분(0~3초)은 잘라냈습니다.
 
 ## 7. 과제 과정에서 경험한 내용
 
